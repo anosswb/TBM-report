@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parte de producción / Production report</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-row">
+    <h1>Parte de producción <small>Production report</small></h1>
+    <div class="top-actions">
+      <span id="status" class="status" aria-live="polite"></span>
+      <button type="button" id="btnNew" class="btn ghost">Nuevo parte<small>New report</small></button>
+      <button type="button" id="btnSave" class="btn primary">Guardar y descargar Excel<small>Save &amp; download Excel</small></button>
+    </div>
+  </div>
+  <nav id="nav" class="nav" aria-label="Secciones / Sections"></nav>
+</header>
+<main id="main"></main>
+<footer class="foot">Los datos se guardan automáticamente en este dispositivo. / Data is autosaved on this device.</footer>
+
+<script src="jszip.min.js"></script>
+<script src="fill.js"></script>
+<script src="template.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
