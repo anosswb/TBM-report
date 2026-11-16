@@ -1,0 +1,52 @@
+name: Build Android app
+
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.TBM_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/tbm.p12"
+            echo "TBM_KEYSTORE_FILE=$RUNNER_TEMP/tbm.p12" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No signing key secret; building with the debug key."
+          fi
+
+      - name: Build
+        env:
+          TBM_KEYSTORE_PASSWORD: ${{ secrets.TBM_KEYSTORE_PASSWORD }}
+        run: gradle -p android assembleRelease --no-daemon
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk TBM-Report.apk
+          TAG="app-v1.0.${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" TBM-Report.apk \
+            --title "TBM Report ${TAG#app-}" \
+            --notes "Android app. Install TBM-Report.apk on the device (allow installing from this source when asked)." \
+            --latest
