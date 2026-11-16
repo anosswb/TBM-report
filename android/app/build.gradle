@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+}
+
+def runNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as Integer
+def ksFile = System.getenv('TBM_KEYSTORE_FILE')
+
+android {
+    namespace 'com.tbmreport.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.tbmreport.app'
+        minSdk 26
+        targetSdk 34
+        versionCode runNumber
+        versionName "1.0.${runNumber}"
+    }
+
+    signingConfigs {
+        release {
+            if (ksFile) {
+                storeFile file(ksFile)
+                storeType 'pkcs12'
+                storePassword System.getenv('TBM_KEYSTORE_PASSWORD')
+                keyAlias 'tbm'
+                keyPassword System.getenv('TBM_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig ksFile ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
+}

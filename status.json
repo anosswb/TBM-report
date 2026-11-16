@@ -1,0 +1,11 @@
+{
+  "active": true,
+  "mensaje": "La aplicación ha sido desactivada por el responsable.",
+  "message": "The app has been switched off by the manager.",
+  "pilots": {
+    "imad": true,
+    "abdelfattah": true,
+    "marouane": true,
+    "mohammed": true
+  }
+}

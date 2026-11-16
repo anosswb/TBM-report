@@ -2,28 +2,72 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Parte de producción / Production report</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12324f">
+<title>TBM Report</title>
+<link rel="icon" type="image/png" href="icons/favicon.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+
+<!-- login -->
+<div id="login" class="screen" hidden>
+  <div class="card login-card">
+    <img src="icons/logo.png" alt="" class="logo-big" width="88" height="88">
+    <h1 class="brand">TBM Report<small>Parte de producción · Production report</small></h1>
+    <p class="lead">Elija su nombre<small>Choose your name</small></p>
+    <div id="pilots" class="pilots"></div>
+    <div id="pinBox" class="pin-box" hidden>
+      <p class="lead"><span id="pinWho"></span><small>Contraseña de 6 cifras · 6-digit password</small></p>
+      <input id="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" aria-label="Contraseña / Password">
+      <div class="pin-actions">
+        <button type="button" id="pinBack" class="btn ghost">Volver<small>Back</small></button>
+        <button type="button" id="pinGo" class="btn primary">Entrar<small>Log in</small></button>
+      </div>
+    </div>
+    <div id="loginMsg" class="login-msg" aria-live="polite"></div>
+  </div>
+  <p class="foot web-only"><a href="https://github.com/anosswb/TBM-report/releases/latest/download/TBM-Report.apk">Descargar la app Android · Download the Android app</a></p>
+</div>
+
+<!-- switched off by the manager -->
+<div id="blocked" class="screen" hidden>
+  <div class="card login-card">
+    <img src="icons/logo.png" alt="" class="logo-big off" width="88" height="88">
+    <h1 class="brand">TBM Report</h1>
+    <p id="blockedMsg" class="lead"></p>
+    <p class="note">Sus datos siguen guardados en este dispositivo.<small>Your data is still saved on this device.</small></p>
+  </div>
+</div>
+
+<!-- the form -->
+<div id="app" hidden>
 <header class="top">
   <div class="top-row">
-    <h1>Parte de producción <small>Production report</small></h1>
+    <div class="brandline">
+      <img src="icons/logo.png" alt="" width="40" height="40">
+      <div><b>TBM Report</b><span id="who" class="who"></span></div>
+    </div>
     <div class="top-actions">
-      <span id="status" class="status" aria-live="polite"></span>
-      <button type="button" id="btnNew" class="btn ghost">Nuevo parte<small>New report</small></button>
-      <button type="button" id="btnSave" class="btn primary">Guardar y descargar Excel<small>Save &amp; download Excel</small></button>
+      <span id="saved" class="saved" aria-live="polite"></span>
+      <button type="button" id="btnLogout" class="btn ghost sm-btn" title="Salir / Log out">Salir<small>Log out</small></button>
+      <button type="button" id="btnNew" class="btn ghost sm-btn">Nuevo parte<small>New report</small></button>
+      <button type="button" id="btnSave" class="btn primary">Guardar Excel<small>Save &amp; download Excel</small></button>
     </div>
   </div>
   <nav id="nav" class="nav" aria-label="Secciones / Sections"></nav>
+  <div id="status" class="status" aria-live="polite"></div>
 </header>
 <main id="main"></main>
-<footer class="foot">Los datos se guardan automáticamente en este dispositivo. / Data is autosaved on this device.</footer>
+<footer class="foot"><span id="progress"></span><br>Los datos se guardan automáticamente en este dispositivo. / Data is autosaved on this device.</footer>
+</div>
 
 <script src="jszip.min.js"></script>
 <script src="fill.js"></script>
 <script src="template.js"></script>
 <script src="app.js"></script>
+<script src="portal.js"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   var RF = window.ReportFill;
-  var STORE = 'tbm-report-draft-v1';
+  var STORE = null, PILOT = null, started = false;   // set by start() after login
   var DEFAULTS = {
     obra: '2079MA20_CASABLANCA SWI2 DESALINATION PLANT_DISCHARGE PIPELINE',
     maquina: 'M-1469M', contenedor: 'M-2998C', tramo: 'Discharge pipeline - 1833 m',
@@ -29,10 +29,12 @@
   function freshState() {
     var f = {}; for (var k in DEFAULTS) f[k] = DEFAULTS[k];
     f.fecha = todayISO();
+    if (PILOT) f.piloto = PILOT.name;
     return { f: f, times: {}, geo: [], lines: [{ n: '', text: '' }] };
   }
   function load() {
     state = freshState();
+    var savedAt = null;
     try {
       var d = JSON.parse(localStorage.getItem(STORE) || 'null');
       if (d && d.state && d.state.f) {
@@ -41,21 +43,70 @@
         state.geo = d.state.geo || [];
         state.lines = (d.state.lines && d.state.lines.length) ? d.state.lines : state.lines;
         hourSel = d.hour || 0;
+        savedAt = d.savedAt || null;
       }
     } catch (e) { /* storage unavailable or corrupt: start fresh */ }
+    if (PILOT) state.f.piloto = PILOT.name;
+    return savedAt;
   }
-  var saveTimer;
-  function persist() {
+  var saveTimer, savePending = false;
+  function writeNow() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () {
-      try { localStorage.setItem(STORE, JSON.stringify({ state: state, hour: hourSel })); } catch (e) { /* ignore */ }
-    }, 150);
+    if (!STORE || !state) return;
+    savePending = false;
+    var at = Date.now();
+    try {
+      localStorage.setItem(STORE, JSON.stringify({ state: state, hour: hourSel, savedAt: at }));
+      savedMark(at, false);
+    } catch (e) { savedMark(at, true); }
+  }
+  function persist() {
+    savePending = true;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(writeNow, 150);
+    clearTimeout(progTimer);
+    progTimer = setTimeout(updateProgress, 300);
+  }
+  window.addEventListener('pagehide', function () { if (savePending) writeNow(); });
+  document.addEventListener('visibilitychange', function () { if (document.hidden && savePending) writeNow(); });
+  function savedMark(at, failed) {
+    var s = $('#saved'); if (!s) return;
+    if (failed) { s.className = 'saved err'; s.innerHTML = 'No se pudo guardar<small>Could not save</small>'; return; }
+    if (!at) { s.className = 'saved'; s.innerHTML = ''; return; }
+    var d = new Date(at);
+    s.className = 'saved';
+    s.innerHTML = '✓ Guardado ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + '<small>Saved on this device</small>';
   }
   function status(msg, err) {
     var s = $('#status'); s.textContent = msg || ''; s.className = 'status' + (err ? ' err' : '');
     if (msg && !err) setTimeout(function () { if (s.textContent === msg) s.textContent = ''; }, 4000);
   }
   function shiftStart() { return state.f.turno === 'DAY' ? 7 : 19; }
+
+  /* section progress shown in the navigation */
+  var progTimer;
+  function anyKey(re) { for (var k in state.f) if (re.test(k) && String(state.f[k] || '').trim() !== '') return true; return false; }
+  function sectionDone(i) {
+    switch (i) {
+      case 0: return anyKey(/^(colocados|avance|tuboInicio|inicio|tuboFin|fin)$/);
+      case 1: for (var r in state.times) if ((state.times[r] || []).length) return true; return false;
+      case 2: return anyKey(/^h(\d+|29v|29d)_\d+$/);
+      case 3: return state.geo.length > 0;
+      case 4: return anyKey(/^c_/);
+      case 5: return anyKey(/^(locAverias1|locAverias2|averias)$/);
+      case 6: return anyKey(/^(trabajos1|trabajos2|obs1|obs2)$/);
+      case 7: return anyKey(/^p_\d+$/);
+      case 8: return anyKey(/^(k_|pt_|pr_|pd_)/) || state.lines.some(function (l) { return String(l.text || '').trim() !== ''; });
+    }
+    return false;
+  }
+  function updateProgress() {
+    if (!state) return;
+    var links = document.querySelectorAll('#nav a'), n = 0;
+    Array.prototype.forEach.call(links, function (a, i) { var d = sectionDone(i); a.classList.toggle('done', d); if (d) n++; });
+    var p = $('#progress');
+    if (p) p.innerHTML = '<b>' + n + ' / ' + links.length + '</b> secciones con datos<small>sections with data</small>';
+  }
 
   /* ---------- field definitions ---------- */
   var GENERAL = [
@@ -65,7 +116,7 @@
     ['tramo', 'Tramo', 'Section', 'text', 'span2'],
     ['colocados', '# Tubos / # Anillos colocados', 'Pipes / rings installed', 'text'],
     ['avance', 'Avance (m)', 'Advance (m)', 'num'],
-    ['piloto', 'Piloto', 'Pilot', 'text'],
+    ['piloto', 'Piloto', 'Pilot', 'ro'],
     ['turno', 'Turno (Día / Noche)', 'Shift (Day / Night)', 'shift'],
     ['fecha', 'Fecha', 'Date', 'date'],
     ['tuboInicio', '# Tubo / # Anillo inicio turno', 'Pipe / ring at shift start', 'text'],
@@ -161,6 +212,7 @@
     var v = esc(state.f[key] || '');
     var a = ' data-k="' + key + '" value="' + v + '" autocomplete="off"' + (extra || '');
     if (kind === 'date') return '<input type="date"' + a + '>';
+    if (kind === 'ro') return '<input type="text" readonly tabindex="-1" class="ro"' + a + '>';
     if (kind === 'shift') return '<select data-k="turno"><option value="NIGHT"' + (state.f.turno === 'NIGHT' ? ' selected' : '') + '>Noche / Night (19:00–07:00)</option><option value="DAY"' + (state.f.turno === 'DAY' ? ' selected' : '') + '>Día / Day (07:00–19:00)</option></select>';
     if (kind === 's') return '<select data-k="' + key + '"><option value=""></option><option value="Si"' + (state.f[key] === 'Si' ? ' selected' : '') + '>Sí / Yes</option><option value="No"' + (state.f[key] === 'No' ? ' selected' : '') + '>No</option></select>';
     if (kind === 'num' || kind === 'n') return '<input type="text" inputmode="decimal"' + a + '>';
@@ -203,6 +255,7 @@
     $('#pipes').outerHTML = p + '</div>';
 
     renderTimes(); renderTabs(); renderHourly(); renderGeo(); renderLines();
+    updateProgress();
   }
 
   /* times */
@@ -281,6 +334,7 @@
   /* ---------- events ---------- */
   document.addEventListener('input', function (e) {
     var t = e.target;
+    if (!started || !t.closest('#app')) return;
     if (t.dataset.k) {
       state.f[t.dataset.k] = t.value;
       if (t.dataset.k === 'turno') { renderTimes(); renderTabs(); renderHourly(); }
@@ -298,7 +352,7 @@
     Array.prototype.forEach.call(document.querySelectorAll('#tabs .tab'), function (b) { b.classList.toggle('has', hourHas(+b.dataset.h)); });
   }
   document.addEventListener('click', function (e) {
-    var b = e.target.closest('[data-act]'); if (!b) return;
+    var b = e.target.closest('[data-act]'); if (!b || !started) return;
     var act = b.dataset.act, row = b.dataset.row, i = +b.dataset.i;
     if (act === 'addint') {
       var list = state.times[row] = state.times[row] || [], last = list[list.length - 1], from;
@@ -329,27 +383,41 @@
   $('#btnNew').addEventListener('click', function () {
     if (!confirm('¿Borrar este parte y empezar uno nuevo? (se mantienen los valores por defecto)\nClear this report and start a new one? (defaults are kept)')) return;
     state = freshState(); hourSel = 0;
-    try { localStorage.removeItem(STORE); } catch (e) { /* ignore */ }
+    writeNow();
     render(); window.scrollTo(0, 0); status('Nuevo parte / New report');
   });
   $('#btnSave').addEventListener('click', function () {
     var btn = this;
     if (!window.JSZip || !window.TEMPLATE_B64) { status('Falta la plantilla / Template missing', true); return; }
+    writeNow();
     var snap = JSON.parse(JSON.stringify(state));
     snap.lines = snap.lines.filter(function (l) { return l && String(l.text || '').trim() !== ''; });
+    var name = RF.fileName(snap), bridge = window.TBMAndroid;
     btn.disabled = true;
-    RF.buildXlsx(window.JSZip, window.TEMPLATE_B64, snap, 'blob').then(function (blob) {
-      var a = document.createElement('a'), url = URL.createObjectURL(blob);
-      a.href = url; a.download = RF.fileName(snap);
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
-      status('Descargado / Downloaded: ' + a.download);
-      persist();
-    }).catch(function (err) {
+    var job = bridge && bridge.saveFile
+      ? RF.buildXlsx(window.JSZip, window.TEMPLATE_B64, snap, 'base64').then(function (b64) {
+          var res = String(bridge.saveFile(b64, name) || '');
+          if (/^error/i.test(res)) throw new Error(res);
+          status('Guardado en Descargas / Saved to Downloads: ' + name);
+        })
+      : RF.buildXlsx(window.JSZip, window.TEMPLATE_B64, snap, 'blob').then(function (blob) {
+          var a = document.createElement('a'), url = URL.createObjectURL(blob);
+          a.href = url; a.download = name;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+          status('Descargado / Downloaded: ' + name);
+        });
+    job.catch(function (err) {
       console.error(err); status('Error: ' + (err && err.message || err), true);
     }).then(function () { btn.disabled = false; });
   });
 
-  load(); render(); onScroll();
+  /* ---------- entry point, called by portal.js after login ---------- */
+  function start(pilot) {
+    PILOT = pilot; STORE = pilot.key; started = true;
+    var who = $('#who'); if (who) who.textContent = pilot.name;
+    var savedAt = load(); render(); onScroll(); savedMark(savedAt, false);
+  }
+  window.TBMApp = { start: start, flush: function () { if (savePending) writeNow(); } };
   window.__app = { get state() { return state; } };
 })();
