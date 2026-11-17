@@ -30,7 +30,7 @@
     var f = {}; for (var k in DEFAULTS) f[k] = DEFAULTS[k];
     f.fecha = todayISO();
     if (PILOT) f.piloto = PILOT.name;
-    return { f: f, times: {}, geo: [], lines: [{ n: '', text: '' }] };
+    return { f: f, times: {}, geo: [], lines: [{ n: '', text: '' }], chain: [], cy: {} };
   }
   function load() {
     state = freshState();
@@ -40,6 +40,8 @@
       if (d && d.state && d.state.f) {
         state.f = Object.assign(state.f, d.state.f);
         state.times = d.state.times || {};
+        state.chain = Array.isArray(d.state.chain) ? d.state.chain : [];
+        state.cy = d.state.cy || {};
         state.geo = d.state.geo || [];
         state.lines = (d.state.lines && d.state.lines.length) ? d.state.lines : state.lines;
         hourSel = d.hour || 0;
@@ -89,7 +91,7 @@
   function sectionDone(i) {
     switch (i) {
       case 0: return anyKey(/^(colocados|avance|tuboInicio|inicio|tuboFin|fin)$/);
-      case 1: for (var r in state.times) if ((state.times[r] || []).length) return true; return false;
+      case 1: if (state.chain.length) return true; for (var r in state.times) if ((state.times[r] || []).length) return true; return false;
       case 2: return anyKey(/^h(\d+|29v|29d)_\d+$/);
       case 3: return state.geo.length > 0;
       case 4: return anyKey(/^c_/);
@@ -230,7 +232,10 @@
     function sec(i, body) { var s = SECTIONS[i]; return '<section id="' + s[0] + '"><h2>' + lab(s[1], s[2]) + '</h2>' + body + '</section>'; }
 
     h += sec(0, '<div class="grid">' + GENERAL.map(function (g) { return field(g[0], g[1], g[2], g[3], g[4]); }).join('') + '</div>');
-    h += sec(1, '<p class="count">Añada intervalos con “Desde / Hasta” (pasos de 5 min). / Add intervals with from / to (5-minute steps).</p><div id="times"></div>');
+    h += sec(1, '<div class="cycle" id="cycle"></div>' +
+      '<h3>' + lab('Línea de tiempo del turno', 'Shift timeline') + '</h3><div id="timeline" class="timeline"></div>' +
+      '<details class="manual"><summary>' + lab('Por actividad (manual)', 'By activity (manual)') + '</summary>' +
+      '<p class="count">Intervalos manuales con “Desde / Hasta”. Las barras muestran también el ciclo. / Manual intervals; bars also show the cycle.</p><div id="times"></div></details>');
     h += sec(2, '<div class="tabs" id="tabs"></div><div id="hourly"></div>');
     h += sec(3, '<p class="count">Toque para marcar una o varias opciones. / Tap to select one or more options.</p><div class="chips" id="geo"></div>');
     h += sec(4, '<div class="grid">' + CONS1.map(function (c) { return field('c_' + c[0], c[1], c[2], 'n'); }).join('') + '</div>');
@@ -254,7 +259,7 @@
     for (var t = 0; t < 5; t++) p += '<span class="l" style="align-self:center">T: ' + (t + 1) + '</span><input type="text" inputmode="numeric" data-k="pt_' + t + '" value="' + esc(state.f['pt_' + t] || '') + '" aria-label="Nº tubo"><input type="text" data-k="pr_' + t + '" value="' + esc(state.f['pr_' + t] || '') + '" aria-label="Referencia"><input type="date" data-k="pd_' + t + '" value="' + esc(state.f['pd_' + t] || '') + '" aria-label="Fecha fabricación">';
     $('#pipes').outerHTML = p + '</div>';
 
-    renderTimes(); renderTabs(); renderHourly(); renderGeo(); renderLines();
+    renderCycle(); renderTimeline(); renderTimes(); renderTabs(); renderHourly(); renderGeo(); renderLines();
     updateProgress();
   }
 
@@ -283,7 +288,166 @@
       if (c) html += '<i style="left:' + (c[0] * 100 / 144) + '%;width:' + ((c[1] - c[0]) * 100 / 144) + '%"></i>';
       if (w) w.textContent = (r[0] && r[1] && !c) ? 'Fuera del turno / Outside shift' : '';
     });
+    state.chain.forEach(function (e) {
+      if (String(e.row) !== String(row)) return;
+      var c = RF.rangeToCells(e.from, e.to, state.f.turno);
+      if (c) html += '<i class="cy" style="left:' + (c[0] * 100 / 144) + '%;width:' + ((c[1] - c[0]) * 100 / 144) + '%"></i>';
+    });
     bar.innerHTML = html;
+  }
+
+  /* ---------- automatic cycle: Avance -> Lodo 10 -> Montaje -> Lodo 5 -> Avance ... ---------- */
+  var ROW_AVANCE = 9, ROW_MONTAJE = 10, ROW_LODO = 13;
+  var LODO_DEFAULT = { avance: 10, montaje: 5 };
+  var MAIN = {
+    avance: { row: ROW_AVANCE, es: 'Avance máquina', en: 'Machine advance', lodo: 'lodoA', next: 'montaje' },
+    montaje: { row: ROW_MONTAJE, es: 'Montaje tubo-anillo', en: 'Pipe–ring installation', lodo: 'lodoM', next: 'avance' }
+  };
+  function toMin(t) { var m = /^(\d{1,2}):(\d{2})$/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; }
+  function rel(t) { var m = toMin(t); return m == null ? null : (m - shiftStart() * 60 + 1440) % 1440; }   // minutes since shift start
+  function relEnd(t) { var r = rel(t); return r === 0 ? 1440 : r; }
+  function shiftEndHm() { return hm(shiftStart() * 60 + 720); }
+  function rowName(row) { for (var i = 0; i < TIMES.length; i++) if (String(TIMES[i][0]) === String(row)) return TIMES[i]; return [row, '?', '?']; }
+  function chainStart() {
+    var c = state.chain;
+    return c.length ? c[c.length - 1].to : (state.cy.start || hm(shiftStart() * 60));
+  }
+  function pendingMain() {
+    for (var k = state.chain.length - 1; k >= 0; k--) {
+      var kd = state.chain[k].kind;
+      if (kd === 'avance' || kd === 'lodoA') return 'montaje';
+      if (kd === 'montaje' || kd === 'lodoM') return 'avance';
+    }
+    return 'avance';
+  }
+  function currentSel() { var s = state.cy.sel; return (s === undefined || s === null || s === '') ? pendingMain() : s; }
+  function entryOk(e) { var a = rel(e.from), b = relEnd(e.to); return a != null && b != null && b > a && b <= 720; }
+  // keep the chain continuous: each step starts where the previous ended; slurry steps keep their minutes
+  function recompute() {
+    var c = state.chain, endRel = 720;
+    for (var k = 0; k < c.length; k++) {
+      if (k > 0) c[k].from = c[k - 1].to;
+      if (c[k].dur != null) {
+        var a = rel(c[k].from);
+        c[k].to = a == null ? c[k].from : hm(shiftStart() * 60 + Math.min(a + Math.max(0, +c[k].dur || 0), endRel));
+      }
+    }
+  }
+  function finishStep() {
+    var sel = currentSel(), start = chainStart(), endEl = $('#cyEnd'), end = endEl ? endEl.value : '';
+    var a = rel(start), b = relEnd(end);
+    if (!end) { status('Indique la hora de fin / Enter the end time', true); if (endEl) endEl.focus(); return; }
+    if (a == null || b == null || b <= a || b > 720) {
+      status('La hora de fin debe ser posterior a ' + start + ' y dentro del turno / End must be after ' + start + ' and within the shift', true);
+      if (endEl) endEl.focus(); return;
+    }
+    snap(null);
+    var m = MAIN[sel];
+    state.chain.push({ row: m ? m.row : +sel, from: start, to: end, kind: m ? sel : 'stop' });
+    if (m) {
+      var lodoEl = $('#cyLodo'), mins = lodoEl ? parseInt(lodoEl.value, 10) : LODO_DEFAULT[sel];
+      if (!(mins >= 0)) mins = LODO_DEFAULT[sel];
+      if (mins > 0 && b < 720) state.chain.push({ row: ROW_LODO, from: end, to: end, kind: m.lodo, dur: Math.min(mins, 120) });
+    }
+    state.cy.sel = null;
+    recompute();
+    renderCycle(); renderTimeline(); drawAllBars(); persist();
+    var nxt = currentSel();
+    status('✓ ' + (m ? m.es : rowName(sel)[1]) + ' ' + start + '–' + end + ' · Siguiente / Next: ' + (MAIN[nxt] ? MAIN[nxt].es : rowName(nxt)[1]) + ' ' + chainStart());
+  }
+  function drawAllBars() { TIMES.forEach(function (t) { if ($('#bar' + t[0])) drawBar(t[0]); }); }
+  function actLabel(sel) { var m = MAIN[sel]; if (m) return [m.es, m.en]; var t = rowName(sel); return [t[1], t[2]]; }
+
+  function renderCycle() {
+    var box = $('#cycle'); if (!box) return;
+    var sel = currentSel(), start = chainStart(), done = relEnd(start) >= 720 && state.chain.length > 0, l = actLabel(sel), m = MAIN[sel];
+    var h = '';
+    if (done) {
+      h += '<div class="cy-now done"><span class="cy-tag">✓</span><div><b>Turno completo</b><small>Shift complete · ' + esc(shiftEndHm()) + '</small></div></div>';
+    } else {
+      h += '<div class="cy-now"><span class="cy-tag">Ahora<small>Now</small></span><div><b>' + esc(l[0]) + '</b><small>' + esc(l[1]) + '</small></div>' +
+        '<div class="cy-from">desde<small>from</small><b>' + esc(start) + '</b></div></div>';
+      h += '<div class="cy-form">';
+      if (!state.chain.length) h += '<label class="fld"><span class="l">' + lab('Inicio del ciclo', 'Cycle start') + '</span><input type="time" step="300" data-cy="start" value="' + esc(start) + '"></label>';
+      h += '<label class="fld"><span class="l">' + lab('Hora de fin', 'End time') + '</span><input type="time" step="300" id="cyEnd"></label>';
+      if (m) h += '<label class="fld lodo"><span class="l">' + lab('Lodo después (min)', 'Slurry after (min)') + '</span><input type="number" inputmode="numeric" min="0" max="120" step="5" id="cyLodo" value="' + LODO_DEFAULT[sel] + '"></label>';
+      h += '<button type="button" class="btn primary cy-go" data-act="cyfinish">Terminar<small>Finish</small></button></div>';
+      var after = m ? 'Después: Lodo ' + LODO_DEFAULT[sel] + ' min → ' + MAIN[m.next].es + ' · Then: slurry → ' + MAIN[m.next].en
+        : 'Después se continúa con / Then back to: ' + MAIN[pendingMain()].es;
+      h += '<p class="count cy-after">' + esc(after) + '</p>';
+    }
+    if (done) { box.innerHTML = h; return; }
+    h += '<p class="l cy-other">' + lab('¿Otra actividad ahora?', 'Something else now?') + '</p><div class="chips cy-chips">';
+    TIMES.forEach(function (t) {
+      var key = t[0] === ROW_AVANCE ? 'avance' : t[0] === ROW_MONTAJE ? 'montaje' : t[0];
+      h += '<button type="button" class="chip' + (t[0] === 12 ? ' bad' : '') + '" data-act="cysel" data-sel="' + key + '" aria-pressed="' + (String(key) === String(sel)) + '">' + esc(t[1]) + '<small>' + esc(t[2]) + '</small></button>';
+    });
+    box.innerHTML = h + '</div>';
+  }
+  function renderTimeline() {
+    var box = $('#timeline'); if (!box) return;
+    if (!state.chain.length) { box.innerHTML = '<p class="count">Aún no hay pasos. Indique la hora de fin del paso actual y pulse “Terminar”. / No steps yet: enter the end time of the current step and tap Finish.</p>'; return; }
+    box.innerHTML = state.chain.map(function (e, i) {
+      var n = actLabel(e.kind === 'stop' ? e.row : (MAIN[e.kind] ? e.kind : e.row)), auto = e.dur != null;
+      if (auto) n = [e.kind === 'lodoA' ? 'Lodo (tras avance)' : 'Lodo (tras montaje)', 'Slurry change'];
+      var from = i === 0 ? '<input type="time" step="300" data-ce="from" data-i="0" value="' + esc(e.from) + '" aria-label="Desde / From">' : '<span class="t">' + esc(e.from) + '</span>';
+      var to = auto ? '<span class="t">' + esc(e.to) + '</span><label class="mins"><input type="number" inputmode="numeric" min="0" max="120" step="5" data-ce="dur" data-i="' + i + '" value="' + esc(e.dur) + '" aria-label="Minutos / Minutes"> min</label>'
+        : '<input type="time" step="300" data-ce="to" data-i="' + i + '" value="' + esc(e.to) + '" aria-label="Hasta / To">';
+      return '<div class="tl' + (auto ? ' auto' : '') + (e.row === 12 ? ' bad' : '') + (entryOk(e) ? '' : ' invalid') + '">' +
+        '<span class="dot"></span><div class="tl-name"><b>' + esc(n[0]) + '</b><small>' + esc(n[1]) + '</small></div>' +
+        '<div class="tl-times">' + from + '<span class="dash">–</span>' + to + '</div>' +
+        '<button type="button" class="x" data-act="cydel" data-i="' + i + '" aria-label="Quitar / Remove">✕</button>' +
+        (entryOk(e) ? '' : '<span class="warn">Revise las horas / Check the times</span>') + '</div>';
+    }).join('');
+  }
+  function onChainEdit(t) {
+    var i = +t.dataset.i, e = state.chain[i]; if (!e) return;
+    if (t.dataset.ce === 'dur') e.dur = Math.min(120, Math.max(0, parseInt(t.value, 10) || 0));
+    else e[t.dataset.ce] = t.value;
+    recompute();
+    // refresh only the derived times so the field being typed in keeps focus
+    Array.prototype.forEach.call(document.querySelectorAll('#timeline .tl'), function (row, k) {
+      var c = state.chain[k], spans = row.querySelectorAll('.tl-times .t');
+      if (!c) return;
+      if (k > 0 && spans[0]) spans[0].textContent = c.from;
+      if (c.dur != null && spans[spans.length - 1]) spans[spans.length - 1].textContent = c.to;
+      var ok = entryOk(c); row.classList.toggle('invalid', !ok);
+      var w = row.querySelector('.warn'); if (!ok && !w) row.insertAdjacentHTML('beforeend', '<span class="warn">Revise las horas / Check the times</span>'); if (ok && w) w.remove();
+    });
+    drawAllBars(); renderCycleLight();
+  }
+  function renderCycleLight() {
+    var b = document.querySelector('#cycle .cy-from b');
+    if (b) b.textContent = chainStart(); else renderCycle();
+  }
+  function deleteStep(i) {
+    var e = state.chain[i]; if (!e) return;
+    var n = 1, nx = state.chain[i + 1];
+    if (MAIN[e.kind] && nx && nx.kind === MAIN[e.kind].lodo) n = 2;   // its automatic slurry step goes with it
+    state.chain.splice(i, n);
+    if (i === 0 && state.chain.length) state.chain[0].from = e.from;
+    recompute();
+  }
+
+  /* ---------- undo ---------- */
+  var undoStack = [], lastSnapKey = null, lastSnapAt = 0;
+  function snap(key) {
+    var now = Date.now();
+    if (key && key === lastSnapKey && now - lastSnapAt < 2000) { lastSnapAt = now; return; }
+    lastSnapKey = key; lastSnapAt = now;
+    undoStack.push(JSON.stringify({ state: state, hour: hourSel }));
+    if (undoStack.length > 60) undoStack.shift();
+    updateUndo();
+  }
+  function updateUndo() { var b = $('#btnUndo'); if (b) b.disabled = !undoStack.length; }
+  function undo() {
+    if (!undoStack.length) return;
+    var d = JSON.parse(undoStack.pop());
+    state = d.state; hourSel = d.hour || 0; lastSnapKey = null;
+    var y = window.scrollY;
+    render(); onScroll(); writeNow(); updateUndo();
+    window.scrollTo(0, y);
+    status('Deshecho / Undone');
   }
 
   /* hours */
@@ -335,9 +499,17 @@
   document.addEventListener('input', function (e) {
     var t = e.target;
     if (!started || !t.closest('#app')) return;
+    if (t.id === 'cyEnd' || t.id === 'cyLodo') return;          // read when Finish is tapped
+    var key = t.dataset.k ? 'k:' + t.dataset.k : t.dataset.line ? 'l:' + t.dataset.i + t.dataset.line
+      : t.dataset.t != null ? 'i:' + (t.closest('.int') || {}).dataset.row + ':' + t.dataset.t
+      : t.dataset.ce ? 'c:' + t.dataset.i + t.dataset.ce : t.dataset.cy ? 'cy:' + t.dataset.cy : null;
+    if (!key) return;
+    snap(key);
+    if (t.dataset.ce) { onChainEdit(t); persist(); return; }
+    if (t.dataset.cy === 'start') { state.cy.start = t.value; renderCycleLight(); persist(); return; }
     if (t.dataset.k) {
       state.f[t.dataset.k] = t.value;
-      if (t.dataset.k === 'turno') { renderTimes(); renderTabs(); renderHourly(); }
+      if (t.dataset.k === 'turno') { renderCycle(); renderTimeline(); renderTimes(); renderTabs(); renderHourly(); }
       else if (/^h/.test(t.dataset.k)) renderTabsLight();
     } else if (t.dataset.line) {
       state.lines[+t.dataset.i][t.dataset.line] = t.value;
@@ -354,7 +526,15 @@
   document.addEventListener('click', function (e) {
     var b = e.target.closest('[data-act]'); if (!b || !started) return;
     var act = b.dataset.act, row = b.dataset.row, i = +b.dataset.i;
-    if (act === 'addint') {
+    if (act === 'cyfinish') { finishStep(); return; }
+    if (act !== 'hour') snap(null);
+    if (act === 'cysel') {
+      var v = b.dataset.sel, cur = currentSel();
+      state.cy.sel = (String(v) === String(pendingMain())) ? null : v;
+      if (String(v) === String(cur) && state.cy.sel !== null) state.cy.sel = null;   // tap again = back to the cycle
+      renderCycle();
+    } else if (act === 'cydel') { deleteStep(i); renderCycle(); renderTimeline(); drawAllBars(); }
+    else if (act === 'addint') {
       var list = state.times[row] = state.times[row] || [], last = list[list.length - 1], from;
       var m = last && /^(\d+):(\d+)$/.exec(last[1]);
       from = m ? hm(+m[1] * 60 + +m[2]) : hm(shiftStart() * 60);
@@ -382,6 +562,7 @@
   /* ---------- new / save ---------- */
   $('#btnNew').addEventListener('click', function () {
     if (!confirm('¿Borrar este parte y empezar uno nuevo? (se mantienen los valores por defecto)\nClear this report and start a new one? (defaults are kept)')) return;
+    snap(null);
     state = freshState(); hourSel = 0;
     writeNow();
     render(); window.scrollTo(0, 0); status('Nuevo parte / New report');
@@ -390,17 +571,18 @@
     var btn = this;
     if (!window.JSZip || !window.TEMPLATE_B64) { status('Falta la plantilla / Template missing', true); return; }
     writeNow();
-    var snap = JSON.parse(JSON.stringify(state));
-    snap.lines = snap.lines.filter(function (l) { return l && String(l.text || '').trim() !== ''; });
-    var name = RF.fileName(snap), bridge = window.TBMAndroid;
+    var out = JSON.parse(JSON.stringify(state));
+    out.lines = out.lines.filter(function (l) { return l && String(l.text || '').trim() !== ''; });
+    out.times = mergedTimes(out);
+    var name = RF.fileName(out), bridge = window.TBMAndroid;
     btn.disabled = true;
     var job = bridge && bridge.saveFile
-      ? RF.buildXlsx(window.JSZip, window.TEMPLATE_B64, snap, 'base64').then(function (b64) {
+      ? RF.buildXlsx(window.JSZip, window.TEMPLATE_B64, out, 'base64').then(function (b64) {
           var res = String(bridge.saveFile(b64, name) || '');
           if (/^error/i.test(res)) throw new Error(res);
           status('Guardado en Descargas / Saved to Downloads: ' + name);
         })
-      : RF.buildXlsx(window.JSZip, window.TEMPLATE_B64, snap, 'blob').then(function (blob) {
+      : RF.buildXlsx(window.JSZip, window.TEMPLATE_B64, out, 'blob').then(function (blob) {
           var a = document.createElement('a'), url = URL.createObjectURL(blob);
           a.href = url; a.download = name;
           document.body.appendChild(a); a.click(); a.remove();
@@ -412,12 +594,22 @@
     }).then(function () { btn.disabled = false; });
   });
 
+  // manual intervals + the automatic cycle, as the Excel engine expects them
+  function mergedTimes(st) {
+    var t = {};
+    Object.keys(st.times || {}).forEach(function (r) { t[r] = (st.times[r] || []).map(function (x) { return [x[0], x[1]]; }); });
+    (st.chain || []).forEach(function (e) { (t[e.row] = t[e.row] || []).push([e.from, e.to]); });
+    return t;
+  }
+  $('#btnUndo').addEventListener('click', undo);
+
   /* ---------- entry point, called by portal.js after login ---------- */
   function start(pilot) {
     PILOT = pilot; STORE = pilot.key; started = true;
     var who = $('#who'); if (who) who.textContent = pilot.name;
-    var savedAt = load(); render(); onScroll(); savedMark(savedAt, false);
+    undoStack = []; lastSnapKey = null;
+    var savedAt = load(); render(); onScroll(); savedMark(savedAt, false); updateUndo();
   }
-  window.TBMApp = { start: start, flush: function () { if (savePending) writeNow(); } };
+  window.TBMApp = { start: start, flush: function () { if (savePending) writeNow(); }, mergedTimes: function () { return mergedTimes(state); } };
   window.__app = { get state() { return state; } };
 })();
