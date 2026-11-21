@@ -234,9 +234,9 @@
   var NAV_SHORT = ['Datos', 'Tiempos', 'Valores', 'Geología', 'Consumos', 'Averías', 'Trabajos', 'Personal', 'Descripción'];
   var STOP_ROWS = RF.STOP_ROWS || [12];   // problems and waits: painted red here and in Excel
   function isStop(row) { return STOP_ROWS.indexOf(+row) >= 0; }
-  var LINE_COLORS = [['', 'Sin color', 'No colour', '#ffffff'], ['yellow', 'Amarillo', 'Yellow', '#ffff00'], ['green', 'Verde', 'Green', '#92d050'],
-    ['blue', 'Azul', 'Blue', '#9bc2e6'], ['orange', 'Naranja', 'Orange', '#ffc000'], ['red', 'Rojo', 'Red', '#ff7c80'],
-    ['purple', 'Morado', 'Purple', '#cc99ff'], ['grey', 'Gris', 'Grey', '#bfbfbf']];
+  var LINE_COLORS = [['', 'Sin color', 'No colour', '#ffffff'], ['yellow', 'Amarillo', 'Yellow', '#ffff00'], ['green', 'Verde', 'Green', '#00b050'],
+    ['blue', 'Azul', 'Blue', '#00b0f0'], ['orange', 'Naranja', 'Orange', '#ff9900'], ['red', 'Rojo', 'Red', '#ff0000'],
+    ['purple', 'Morado', 'Purple', '#b266ff'], ['grey', 'Gris', 'Grey', '#a6a6a6']];
   function lineCss(c) { for (var i = 1; i < LINE_COLORS.length; i++) if (LINE_COLORS[i][0] === c) return LINE_COLORS[i][3]; return ''; }
   var NAV_EN = ['General', 'Times', 'Values', 'Geology', 'Consumption', 'Breakdowns', 'Works', 'Crew', 'Description'];
 

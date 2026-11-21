@@ -16,7 +16,7 @@
   // stops and problems are painted red: breakdowns dark red, waits and other stops bright red
   var STOP_FILLS = { 12: FILL_BREAKDOWN, 14: FILL_RED, 15: FILL_RED, 20: FILL_RED };
   // colours a work line (sheet 2) can be highlighted with: key -> Excel ARGB
-  var LINE_COLORS = { yellow: 'FFFFFF00', green: 'FF92D050', blue: 'FF9BC2E6', orange: 'FFFFC000', red: 'FFFF7C80', purple: 'FFCC99FF', grey: 'FFBFBFBF' };
+  var LINE_COLORS = { yellow: 'FFFFFF00', green: 'FF00B050', blue: 'FF00B0F0', orange: 'FFFF9900', red: 'FFFF0000', purple: 'FFB266FF', grey: 'FFA6A6A6' };
   var PAINT_FILLS = { 7: 1, 10: 1, 12: 1, 13: 1 };
   var JEFE_PREFIX = 'JEFE DE OBRA:' + new Array(80).join(' ');
   var LINE_FIRST = 4, LINE_LAST = 38;
