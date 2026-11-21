@@ -166,7 +166,16 @@ details.manual summary .l,details.manual summary{font-weight:700;color:var(--bra
 .chip[aria-pressed=true] small{color:#4a3b00}
 
 /* lines / pipes */
-.line{display:grid;grid-template-columns:64px 1fr 34px;gap:8px;align-items:start;margin-bottom:8px}
+.line{display:grid;grid-template-columns:64px 1fr 34px 34px;gap:8px;align-items:start;margin-bottom:8px}
+.line .color{min-height:34px;width:34px;min-width:34px;padding:0;border-width:1px;border-radius:50%;margin-top:11px;display:flex;align-items:center;justify-content:center}
+.line .color i{display:block;width:18px;height:18px;border-radius:50%;border:1px solid #9aa7b3;background:conic-gradient(#ffff00 0 25%,#92d050 0 50%,#9bc2e6 0 75%,#ff7c80 0)}
+.line .color[aria-expanded=true]{border-color:var(--brand);border-width:2px}
+.line.colored textarea,.line.colored .num{border-color:#8a96a3}
+.palette{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 12px 72px}
+.palette .sw{font:inherit;font-size:13px;font-weight:600;min-height:44px;min-width:76px;padding:4px 10px;border:2px solid rgba(0,0,0,.18);border-radius:10px;cursor:pointer;color:#14202b;line-height:1.1;text-align:left}
+.palette .sw small{display:block;font-size:11px;font-weight:400;opacity:.75}
+.palette .sw[aria-pressed=true]{border-color:#14202b;box-shadow:0 0 0 2px #fff inset}
+.palette .sw.none{background:#fff;border-style:dashed}
 .line .del{min-height:34px;width:34px;min-width:34px;padding:0;font-size:13px;border-width:1px;border-radius:50%;margin-top:11px;opacity:.75}
 .line .del:hover{opacity:1}
 .line textarea{min-height:56px}
@@ -188,7 +197,8 @@ details.manual summary .l,details.manual summary{font-weight:700;color:var(--bra
   .nav{padding:0 10px 8px}
   main{padding:8px 10px 40px}
   section{padding:12px;scroll-margin-top:190px}
-  .line{grid-template-columns:48px 1fr 32px;gap:6px}.line .del{width:32px;min-width:32px;min-height:32px}
+  .line{grid-template-columns:48px 1fr 32px 32px;gap:6px}.line .del,.line .color{width:32px;min-width:32px;min-height:32px}
+  .palette{margin-left:0}
   .top-actions{grid-template-columns:1fr 1fr 1fr 1.35fr}
   .top-actions .btn{min-height:44px;padding:4px 4px;font-size:14px}
   .top-actions .btn small{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

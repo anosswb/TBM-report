@@ -24,13 +24,35 @@
   function todayISO() { var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function hm(min) { min = ((min % 1440) + 1440) % 1440; return pad(Math.floor(min / 60)) + ':' + pad(min % 60); }
 
+  /* ---------- description history: the work lines carry over to the next report ---------- */
+  var DESC_KEY = 'tbm-desc-last-v1';     // last description written on this device, by any pilot
+  var linesDirty = false;
+  function cleanLines(lines) {
+    var out = (lines || []).filter(function (l) { return l && String(l.text || '').trim() !== ''; })
+      .map(function (l) { var o = { n: l.n || '', text: l.text || '' }; if (l.color) o.color = l.color; return o; });
+    return out.length ? out : [{ n: '', text: '' }];
+  }
+  function lastDescription() {
+    try {
+      var d = JSON.parse(localStorage.getItem(DESC_KEY) || 'null');
+      if (d && Array.isArray(d.lines)) return d;
+    } catch (e) { /* none */ }
+    return null;
+  }
+  function saveDescription() {
+    linesDirty = false;
+    try { localStorage.setItem(DESC_KEY, JSON.stringify({ lines: cleanLines(state.lines), at: Date.now(), by: PILOT ? PILOT.id : '' })); } catch (e) { /* storage full */ }
+  }
+
   /* ---------- state ---------- */
   var state, hourSel = 0;
-  function freshState() {
+  function freshState(carryLines) {
     var f = {}; for (var k in DEFAULTS) f[k] = DEFAULTS[k];
     f.fecha = todayISO();
     if (PILOT) f.piloto = PILOT.name;
-    return { f: f, times: {}, geo: [], lines: [{ n: '', text: '' }], chain: [], cy: {} };
+    var last = lastDescription();
+    var lines = last ? cleanLines(last.lines) : cleanLines(carryLines);
+    return { f: f, times: {}, geo: [], lines: lines, chain: [], cy: {} };
   }
   function load() {
     state = freshState();
@@ -48,6 +70,8 @@
         savedAt = d.savedAt || null;
       }
     } catch (e) { /* storage unavailable or corrupt: start fresh */ }
+    // first run with this feature: the current draft's description becomes the history
+    if (!lastDescription() && state.lines.some(function (l) { return String(l.text || '').trim() !== ''; })) saveDescription();
     if (PILOT) state.f.piloto = PILOT.name;
     return savedAt;
   }
@@ -59,6 +83,7 @@
     var at = Date.now();
     try {
       localStorage.setItem(STORE, JSON.stringify({ state: state, hour: hourSel, savedAt: at }));
+      if (linesDirty) saveDescription();
       savedMark(at, false);
     } catch (e) { savedMark(at, true); }
   }
@@ -207,6 +232,12 @@
     ['sec-desc', 'Descripción de trabajos', 'Description of works (sheet 2)']
   ];
   var NAV_SHORT = ['Datos', 'Tiempos', 'Valores', 'Geología', 'Consumos', 'Averías', 'Trabajos', 'Personal', 'Descripción'];
+  var STOP_ROWS = RF.STOP_ROWS || [12];   // problems and waits: painted red here and in Excel
+  function isStop(row) { return STOP_ROWS.indexOf(+row) >= 0; }
+  var LINE_COLORS = [['', 'Sin color', 'No colour', '#ffffff'], ['yellow', 'Amarillo', 'Yellow', '#ffff00'], ['green', 'Verde', 'Green', '#92d050'],
+    ['blue', 'Azul', 'Blue', '#9bc2e6'], ['orange', 'Naranja', 'Orange', '#ffc000'], ['red', 'Rojo', 'Red', '#ff7c80'],
+    ['purple', 'Morado', 'Purple', '#cc99ff'], ['grey', 'Gris', 'Grey', '#bfbfbf']];
+  function lineCss(c) { for (var i = 1; i < LINE_COLORS.length; i++) if (LINE_COLORS[i][0] === c) return LINE_COLORS[i][3]; return ''; }
   var NAV_EN = ['General', 'Times', 'Values', 'Geology', 'Consumption', 'Breakdowns', 'Works', 'Crew', 'Description'];
 
   /* ---------- input builders ---------- */
@@ -270,7 +301,7 @@
     box.innerHTML = TIMES.map(function (t) {
       var row = t[0];
       return '<div class="trow" data-row="' + row + '"><div class="thead"><span class="l">' + lab(t[1], t[2]) + '</span><button type="button" class="sm add" data-act="addint" data-row="' + row + '">+ Intervalo / Interval</button></div>' +
-        '<div class="bar' + (row === 12 ? ' red' : '') + '" id="bar' + row + '"></div><div class="ticks">' + ticks + '</div><div class="ints" id="ints' + row + '"></div></div>';
+        '<div class="bar' + (isStop(row) ? ' red' : '') + '" id="bar' + row + '"></div><div class="ticks">' + ticks + '</div><div class="ints" id="ints' + row + '"></div></div>';
     }).join('');
     TIMES.forEach(function (t) { renderInts(t[0]); });
   }
@@ -380,7 +411,7 @@
     h += '<p class="l cy-other">' + lab('¿Otra actividad ahora?', 'Something else now?') + '</p><div class="chips cy-chips">';
     TIMES.forEach(function (t) {
       var key = t[0] === ROW_AVANCE ? 'avance' : t[0] === ROW_MONTAJE ? 'montaje' : t[0];
-      h += '<button type="button" class="chip' + (t[0] === 12 ? ' bad' : '') + '" data-act="cysel" data-sel="' + key + '" aria-pressed="' + (String(key) === String(sel)) + '">' + esc(t[1]) + '<small>' + esc(t[2]) + '</small></button>';
+      h += '<button type="button" class="chip' + (isStop(t[0]) ? ' bad' : '') + '" data-act="cysel" data-sel="' + key + '" aria-pressed="' + (String(key) === String(sel)) + '">' + esc(t[1]) + '<small>' + esc(t[2]) + '</small></button>';
     });
     box.innerHTML = h + '</div>';
   }
@@ -393,7 +424,7 @@
       var from = i === 0 ? '<input type="time" step="300" data-ce="from" data-i="0" value="' + esc(e.from) + '" aria-label="Desde / From">' : '<span class="t">' + esc(e.from) + '</span>';
       var to = auto ? '<span class="t">' + esc(e.to) + '</span><label class="mins"><input type="number" inputmode="numeric" min="0" max="120" step="5" data-ce="dur" data-i="' + i + '" value="' + esc(e.dur) + '" aria-label="Minutos / Minutes"> min</label>'
         : '<input type="time" step="300" data-ce="to" data-i="' + i + '" value="' + esc(e.to) + '" aria-label="Hasta / To">';
-      return '<div class="tl' + (auto ? ' auto' : '') + (e.row === 12 ? ' bad' : '') + (entryOk(e) ? '' : ' invalid') + '">' +
+      return '<div class="tl' + (auto ? ' auto' : '') + (isStop(e.row) ? ' bad' : '') + (entryOk(e) ? '' : ' invalid') + '">' +
         '<span class="dot"></span><div class="tl-name"><b>' + esc(n[0]) + '</b><small>' + esc(n[1]) + '</small></div>' +
         '<div class="tl-times">' + from + '<span class="dash">–</span>' + to + '</div>' +
         '<button type="button" class="x" data-act="cydel" data-i="' + i + '" aria-label="Quitar / Remove">✕</button>' +
@@ -443,7 +474,8 @@
   function undo() {
     if (!undoStack.length) return;
     var d = JSON.parse(undoStack.pop());
-    state = d.state; hourSel = d.hour || 0; lastSnapKey = null;
+    if (JSON.stringify(d.state.lines) !== JSON.stringify(state.lines)) linesDirty = true;
+    state = d.state; hourSel = d.hour || 0; lastSnapKey = null; paletteFor = -1;
     var y = window.scrollY;
     render(); onScroll(); writeNow(); updateUndo();
     window.scrollTo(0, y);
@@ -488,10 +520,20 @@
   }
 
   /* sheet 2 lines */
+  var paletteFor = -1;
   function renderLines() {
     var max = RF.LINE_MAX;
     $('#lines').innerHTML = state.lines.map(function (l, i) {
-      return '<div class="line"><input type="text" class="num" inputmode="numeric" placeholder="Nº" data-line="n" data-i="' + i + '" value="' + esc(l.n || '') + '" aria-label="Número / Number"><textarea data-line="text" data-i="' + i + '" placeholder="Descripción / Description" aria-label="Descripción / Description">' + esc(l.text || '') + '</textarea><button type="button" class="sm del" data-act="delline" data-i="' + i + '" aria-label="Quitar / Remove">✕</button></div>';
+      var css = lineCss(l.color), st = css ? ' style="background:' + css + '"' : '';
+      var h = '<div class="line' + (css ? ' colored' : '') + '"><input type="text" class="num" inputmode="numeric" placeholder="Nº" data-line="n" data-i="' + i + '" value="' + esc(l.n || '') + '" aria-label="Número / Number"' + st + '><textarea data-line="text" data-i="' + i + '" placeholder="Descripción / Description" aria-label="Descripción / Description"' + st + '>' + esc(l.text || '') + '</textarea>' +
+        '<button type="button" class="sm color" data-act="linepal" data-i="' + i + '" aria-label="Color" aria-expanded="' + (paletteFor === i) + '" title="Color"><i' + (css ? ' style="background:' + css + '"' : '') + '></i></button>' +
+        '<button type="button" class="sm del" data-act="delline" data-i="' + i + '" aria-label="Quitar / Remove">✕</button></div>';
+      if (paletteFor === i) {
+        h += '<div class="palette" role="group" aria-label="Color de la línea / Line colour">' + LINE_COLORS.map(function (c) {
+          return '<button type="button" class="sw' + (c[0] ? '' : ' none') + '" data-act="linecolor" data-i="' + i + '" data-c="' + c[0] + '" aria-pressed="' + ((l.color || '') === c[0]) + '" title="' + esc(c[1] + ' / ' + c[2]) + '" style="background:' + c[3] + '"><span>' + esc(c[1]) + '<small>' + esc(c[2]) + '</small></span></button>';
+        }).join('') + '</div>';
+      }
+      return h;
     }).join('') + '<button type="button" class="sm add" data-act="addline"' + (state.lines.length >= max ? ' disabled' : '') + '>+ Añadir línea / Add line</button> <span class="count">' + state.lines.length + ' / ' + max + '</span>';
   }
 
@@ -513,6 +555,7 @@
       else if (/^h/.test(t.dataset.k)) renderTabsLight();
     } else if (t.dataset.line) {
       state.lines[+t.dataset.i][t.dataset.line] = t.value;
+      linesDirty = true;
     } else if (t.dataset.t != null) {
       var d = t.closest('.int'), row = d.dataset.row, i = +d.dataset.i;
       state.times[row][i][+t.dataset.t] = t.value;
@@ -527,7 +570,7 @@
     var b = e.target.closest('[data-act]'); if (!b || !started) return;
     var act = b.dataset.act, row = b.dataset.row, i = +b.dataset.i;
     if (act === 'cyfinish') { finishStep(); return; }
-    if (act !== 'hour') snap(null);
+    if (act !== 'hour' && act !== 'linepal') snap(null);
     if (act === 'cysel') {
       var v = b.dataset.sel, cur = currentSel();
       state.cy.sel = (String(v) === String(pendingMain())) ? null : v;
@@ -546,8 +589,14 @@
     else if (act === 'hour') { hourSel = +b.dataset.h; renderTabs(); renderHourly(); }
     else if (act === 'copyprev') { copyPrev(); return; }
     else if (act === 'geo') { var p = state.geo.indexOf(i); if (p >= 0) state.geo.splice(p, 1); else state.geo.push(i); state.geo.sort(function (a, c) { return a - c; }); renderGeo(); }
-    else if (act === 'addline') { if (state.lines.length < RF.LINE_MAX) { state.lines.push({ n: '', text: '' }); renderLines(); var ta = document.querySelectorAll('#lines textarea'); ta[ta.length - 1].focus(); } }
-    else if (act === 'delline') { state.lines.splice(i, 1); if (!state.lines.length) state.lines.push({ n: '', text: '' }); renderLines(); }
+    else if (act === 'addline') { if (state.lines.length < RF.LINE_MAX) { state.lines.push({ n: '', text: '' }); paletteFor = -1; renderLines(); var ta = document.querySelectorAll('#lines textarea'); ta[ta.length - 1].focus(); } }
+    else if (act === 'delline') { state.lines.splice(i, 1); if (!state.lines.length) state.lines.push({ n: '', text: '' }); paletteFor = -1; linesDirty = true; renderLines(); }
+    else if (act === 'linepal') { paletteFor = paletteFor === i ? -1 : i; renderLines(); return; }
+    else if (act === 'linecolor') {
+      var ln = state.lines[i]; if (!ln) return;
+      if (b.dataset.c) ln.color = b.dataset.c; else delete ln.color;
+      paletteFor = -1; linesDirty = true; renderLines();
+    }
     persist();
   });
 
@@ -561,11 +610,12 @@
 
   /* ---------- new / save ---------- */
   $('#btnNew').addEventListener('click', function () {
-    if (!confirm('¿Borrar este parte y empezar uno nuevo? (se mantienen los valores por defecto)\nClear this report and start a new one? (defaults are kept)')) return;
+    if (!confirm('¿Empezar un parte nuevo? Se borran tiempos y valores; la descripción de trabajos se copia al nuevo parte.\nStart a new report? Times and values are cleared; the description of works is copied to the new report.')) return;
     snap(null);
-    state = freshState(); hourSel = 0;
+    if (linesDirty) saveDescription();
+    state = freshState(state.lines); hourSel = 0; paletteFor = -1;
     writeNow();
-    render(); window.scrollTo(0, 0); status('Nuevo parte / New report');
+    render(); window.scrollTo(0, 0); status('Nuevo parte · descripción copiada / New report · description copied');
   });
   $('#btnSave').addEventListener('click', function () {
     var btn = this;
@@ -607,7 +657,7 @@
   function start(pilot) {
     PILOT = pilot; STORE = pilot.key; started = true;
     var who = $('#who'); if (who) who.textContent = pilot.name;
-    undoStack = []; lastSnapKey = null;
+    undoStack = []; lastSnapKey = null; linesDirty = false; paletteFor = -1;
     var savedAt = load(); render(); onScroll(); savedMark(savedAt, false); updateUndo();
   }
   window.TBMApp = { start: start, flush: function () { if (savePending) writeNow(); }, mergedTimes: function () { return mergedTimes(state); } };
