@@ -1,6 +1,6 @@
 /* Offline copy of the app. Network first, so updates arrive as soon as there is signal;
    status.json (the on/off switch) is never cached here. */
-var CACHE = 'tbm-report-v3';
+var CACHE = 'tbm-report-v4';
 var FILES = ['./', 'index.html', 'styles.css', 'app.js', 'portal.js', 'fill.js', 'template.js', 'jszip.min.js',
   'manifest.webmanifest', 'icons/logo.png', 'icons/favicon.png', 'icons/icon-192.png'];
 

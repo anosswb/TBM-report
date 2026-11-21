@@ -12,7 +12,11 @@
   var CONS1 = ['O49', 'AM49', 'BK49', 'CI49', 'DG49', 'EE49', 'O50', 'AM50', 'BK50', 'CI50', 'DG50', 'EE50'];
   var CONS2 = { C40: 'm³', C41: 'm³', C42: 'm³', C43: 'kg', C44: 'kg', C45: 'kg', G40: 'L', G41: 'm³', G42: 'kg', G43: 'kg', G44: 'kg', G45: 'kg' };
   var TEXT_AREAS = { locAverias1: 'B52', locAverias2: 'AA52', averias: 'BK52', trabajos1: 'B56', trabajos2: 'AA56', obs1: 'BK56', obs2: 'CU56' };
-  var FILL_WHITE = 6, FILL_PAINT = 10, FILL_BREAKDOWN = 13, FILL_GEO = 11;
+  var FILL_WHITE = 6, FILL_PAINT = 10, FILL_BREAKDOWN = 13, FILL_GEO = 11, FILL_RED = 7;
+  // stops and problems are painted red: breakdowns dark red, waits and other stops bright red
+  var STOP_FILLS = { 12: FILL_BREAKDOWN, 14: FILL_RED, 15: FILL_RED, 20: FILL_RED };
+  // colours a work line (sheet 2) can be highlighted with: key -> Excel ARGB
+  var LINE_COLORS = { yellow: 'FFFFFF00', green: 'FF92D050', blue: 'FF9BC2E6', orange: 'FFFFC000', red: 'FFFF7C80', purple: 'FFCC99FF', grey: 'FFBFBFBF' };
   var PAINT_FILLS = { 7: 1, 10: 1, 12: 1, 13: 1 };
   var JEFE_PREFIX = 'JEFE DE OBRA:' + new Array(80).join(' ');
   var LINE_FIRST = 4, LINE_LAST = 38;
@@ -89,6 +93,17 @@
     this.xfs = m[1].match(/<xf\b[^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g);
     this.cache = {};
   }
+  /* a new solid fill in <fills>, returns its id */
+  StyleBook.prototype.solidFill = function (argb) {
+    if (!/^[0-9A-F]{8}$/i.test(argb)) return null;
+    this.fills = this.fills || {};
+    if (this.fills[argb] != null) return this.fills[argb];
+    var m = /<fills\b[^>]*>([\s\S]*?)<\/fills>/.exec(this.xml);
+    var list = m[1].match(/<fill\b[^>]*?(?:\/>|>[\s\S]*?<\/fill>)/g) || [];
+    list.push('<fill><patternFill patternType="solid"><fgColor rgb="' + argb + '"/><bgColor indexed="64"/></patternFill></fill>');
+    this.xml = this.xml.replace(m[0], '<fills count="' + list.length + '">' + list.join('') + '</fills>');
+    return (this.fills[argb] = list.length - 1);
+  };
   StyleBook.prototype.fillOf = function (sid) {
     var m = /fillId="(\d+)"/.exec(this.xfs[sid]);
     return m ? +m[1] : 0;
@@ -132,6 +147,7 @@
     var missing = Object.keys(updates).filter(function (k) { return !used[k]; });
     return { xml: out, missing: missing };
   }
+  function fixedFill(id) { return function () { return id; }; }
   function setRowHeight(xml, row, ht) {
     return xml.replace(new RegExp('<row r="' + row + '"([^>]*)>'), function (all, attrs) {
       attrs = attrs.replace(/\s(ht|customHeight)="[^"]*"/g, '');
@@ -192,7 +208,7 @@
     Object.keys(u1).forEach(function (ref) {
       var u = u1[ref];
       if (u.paint != null) u.fillFn = function (cur) {
-        if (u.paint) return u.row === 12 ? FILL_BREAKDOWN : FILL_PAINT;
+        if (u.paint) return STOP_FILLS[u.row] || FILL_PAINT;
         return PAINT_FILLS[cur] ? FILL_WHITE : cur;
       };
       if (u.geo != null) u.fillFn = function (cur) { return u.geo ? FILL_GEO : (cur === FILL_GEO ? 0 : cur); };
@@ -209,6 +225,12 @@
       var l = lines[r - LINE_FIRST];
       set(u2, 'A' + r, l ? asNum(l.n) : null);
       set(u2, 'B' + r, l ? ' ' + clean(l.text) : null);
+      var fid = l && LINE_COLORS[l.color] ? styles.solidFill(LINE_COLORS[l.color]) : null;
+      if (fid != null) {
+        // the whole line (number + merged B:K text) takes the colour
+        u2['A' + r].fillFn = u2['B' + r].fillFn = fixedFill(fid);
+        for (var cc = 3; cc <= 11; cc++) u2[colName(cc) + r] = { keep: true, fillFn: fixedFill(fid) };
+      }
       var n = 1;
       if (l) n = clean(l.text).split('\n').reduce(function (a, s) { return a + Math.max(1, Math.ceil(s.length / 110)); }, 0);
       heights[r] = Math.round(18.75 * n * 100) / 100;
@@ -247,7 +269,7 @@
 
   var api = {
     fillReport: fillReport, buildXlsx: buildXlsx, fileName: fileName, rangeToCells: rangeToCells, colName: colName,
-    HOUR_COLS: HOUR_COLS, TIME_ROWS: TIME_ROWS, CONS1: CONS1, CONS2: CONS2, LINE_MAX: LINE_LAST - LINE_FIRST + 1
+    HOUR_COLS: HOUR_COLS, TIME_ROWS: TIME_ROWS, STOP_ROWS: Object.keys(STOP_FILLS).map(Number), LINE_COLORS: LINE_COLORS, CONS1: CONS1, CONS2: CONS2, LINE_MAX: LINE_LAST - LINE_FIRST + 1
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ReportFill = api;
 })(typeof self !== 'undefined' ? self : this);
