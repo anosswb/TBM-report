@@ -496,7 +496,8 @@
   }
   function renderHourly() {
     var s = shiftStart(), h = hourSel;
-    var html = '<div class="hour-head"><b>' + pad((s + h) % 24) + ':00 – ' + pad((s + h + 1) % 24) + ':00</b><button type="button" class="sm add" data-act="copyprev">Copiar de la hora anterior con datos<br><small>Copy from previous filled hour</small></button></div><div class="vlist">';
+    var html = '<div class="hour-head"><b>' + pad((s + h) % 24) + ':00 – ' + pad((s + h + 1) % 24) + ':00</b><span class="hour-btns"><button type="button" class="sm add" data-act="copyprev">Copiar de la hora anterior con datos<br><small>Copy from previous filled hour</small></button>' +
+      '<button type="button" class="sm clear" data-act="clearhour"' + (hourHas(h) ? '' : ' disabled') + '>✕ Borrar esta hora<br><small>Clear this hour</small></button></span></div><div class="vlist">';
     HOURLY.forEach(function (r) {
       var key = 'h' + r[0] + '_' + h;
       html += '<label class="fld"><span class="l">' + lab(r[1], r[2]) + '</span>' + inputHtml(key, r[3]) + '</label>';
@@ -510,6 +511,16 @@
     HOURLY.forEach(function (r) { state.f['h' + r[0] + '_' + h] = state.f['h' + r[0] + '_' + src] || ''; });
     renderHourly(); renderTabs(); persist();
     status('Copiado de ' + pad((shiftStart() + src) % 24) + ':00 / Copied from ' + pad((shiftStart() + src) % 24) + ':00');
+  }
+
+  function clearHour() {
+    var h = hourSel, label = pad((shiftStart() + h) % 24) + ':00';
+    if (!hourHas(h)) return;
+    if (!confirm('¿Borrar todos los valores de las ' + label + '? (se puede deshacer)\nClear all values of ' + label + '? (can be undone)')) return;
+    snap(null);
+    HOURLY.forEach(function (r) { delete state.f['h' + r[0] + '_' + h]; });
+    renderHourly(); renderTabs(); persist();
+    status('Hora ' + label + ' borrada / Hour ' + label + ' cleared');
   }
 
   /* geology */
@@ -565,12 +576,13 @@
   });
   function renderTabsLight() {
     Array.prototype.forEach.call(document.querySelectorAll('#tabs .tab'), function (b) { b.classList.toggle('has', hourHas(+b.dataset.h)); });
+    var cb = document.querySelector('[data-act="clearhour"]'); if (cb) cb.disabled = !hourHas(hourSel);
   }
   document.addEventListener('click', function (e) {
     var b = e.target.closest('[data-act]'); if (!b || !started) return;
     var act = b.dataset.act, row = b.dataset.row, i = +b.dataset.i;
     if (act === 'cyfinish') { finishStep(); return; }
-    if (act !== 'hour' && act !== 'linepal') snap(null);
+    if (act !== 'hour' && act !== 'linepal' && act !== 'clearhour') snap(null);
     if (act === 'cysel') {
       var v = b.dataset.sel, cur = currentSel();
       state.cy.sel = (String(v) === String(pendingMain())) ? null : v;
@@ -588,6 +600,7 @@
     } else if (act === 'delint') { state.times[row].splice(i, 1); renderInts(row); }
     else if (act === 'hour') { hourSel = +b.dataset.h; renderTabs(); renderHourly(); }
     else if (act === 'copyprev') { copyPrev(); return; }
+    else if (act === 'clearhour') { clearHour(); return; }
     else if (act === 'geo') { var p = state.geo.indexOf(i); if (p >= 0) state.geo.splice(p, 1); else state.geo.push(i); state.geo.sort(function (a, c) { return a - c; }); renderGeo(); }
     else if (act === 'addline') { if (state.lines.length < RF.LINE_MAX) { state.lines.push({ n: '', text: '' }); paletteFor = -1; renderLines(); var ta = document.querySelectorAll('#lines textarea'); ta[ta.length - 1].focus(); } }
     else if (act === 'delline') { state.lines.splice(i, 1); if (!state.lines.length) state.lines.push({ n: '', text: '' }); paletteFor = -1; linesDirty = true; renderLines(); }

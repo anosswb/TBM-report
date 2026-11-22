@@ -156,6 +156,9 @@ details.manual summary .l,details.manual summary{font-weight:700;color:var(--bra
 .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
 .hour-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;padding:8px 12px;background:var(--amber-2);border-radius:12px}
 .hour-head b{font-size:20px}
+.hour-btns{display:flex;gap:8px;flex-wrap:wrap}
+.sm.clear{color:var(--accent);border-color:#efc4be}
+.sm.clear:disabled{opacity:.45;cursor:default}
 .vlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px 18px}
 
 /* chips */
